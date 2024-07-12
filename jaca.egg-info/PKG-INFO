@@ -1,0 +1,35 @@
+Metadata-Version: 2.1
+Name: jaca
+Version: 0.1.0
+Summary: A visualization tool for robotics tasks using Rerun
+Home-page: https://github.com/LiHaoyang0616/Jaca.git
+Author: Haoyang Li
+Author-email: hyli1606@gmail.com
+Classifier: Programming Language :: Python :: 3.10
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: rerun-sdk
+Requires-Dist: numpy
+Requires-Dist: scipy
+Requires-Dist: pyyaml
+Requires-Dist: urdfpy
+
+# Jaca
+Easily visualization tools for the usual robotics tasks
+
+# Robotics Visualization Tool
+
+This repository contains a visualization tool for common robotics tasks using the Rerun library. It supports visualization of:
+
+- Camera (pose + RGB)
+- Point Cloud (object / map)
+- Robot Model (URDF)
+- Trajectory
+
+The tool allows for individual component visualization as well as combined visualization in a 3D space.
+
+## Installation
+
+1. Clone this repository:

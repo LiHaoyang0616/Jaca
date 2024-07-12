@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+
+# Virtual environment
+venv/
+env/
+
+# IDEs
+.vscode/
+.idea/
+
+# Miscellaneous
+*.log
+.DS_Store
+
+test/
+
+
+jaca.egg-info   # egg-info
+dist            # build
+build           # build
+*.egg           # egg
+
+urdf/
