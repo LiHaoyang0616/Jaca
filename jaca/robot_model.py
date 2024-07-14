@@ -7,18 +7,55 @@ from urdf_parser_py import urdf as urdf_parser
 from typing import Optional, List
 import pathlib
 import os
+import time
 
 
 class URDFVisualizer:
     """Class to visualize a URDF using Rerun."""
 
-    def __init__(self, filepath: str, entity_path_prefix: Optional[str] = None) -> None:
+    def __init__(
+        self, name, filepath: str, entity_path_prefix: Optional[str] = None
+    ) -> None:
         self.urdf = urdf_parser.URDF.from_xml_file(filepath)
-        # get the path of the urdf file:
         self.urdf_path = os.path.dirname(filepath)
-        self.frame_scale = 2.0
         self.entity_path_prefix = entity_path_prefix
         self.mat_name_to_mat = {mat.name: mat for mat in self.urdf.materials}
+        self.root_pose = np.eye(4)
+        self.name = name
+
+        rr.init(self.name, spawn=True)
+        self.set_time_seconds(time.time())
+        rr.log(
+            f"{self.name}", rr.ViewCoordinates.RIGHT_HAND_Z_UP, static=True
+        )  # Set an up-axis
+        rr.log(
+            f"{self.name}/world_axes",
+            rr.Arrows3D(
+                vectors=[[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+                origins=[[0, 0, 0], [0, 0, 0], [0, 0, 0]],
+                colors=[[255, 0, 0], [0, 255, 0], [0, 0, 255]],
+            ),
+        )
+
+    def set_root_pose(self, translation: np.ndarray, rotation: np.ndarray) -> None:
+        """Set the root pose of the URDF."""
+        self.root_pose[:3, 3] = translation
+        self.root_pose[:3, :3] = st.Rotation.from_euler("xyz", rotation).as_matrix()
+        print(self.root_pose)
+
+    def update_joint(
+        self,
+        joint_name: str,
+        translation: Optional[np.ndarray] = None,
+        rotation: Optional[np.ndarray] = None,
+    ) -> None:
+        """Update the translation and/or rotation of a specific joint."""
+        for joint in self.urdf.joints:
+            if joint.name == joint_name:
+                if translation is not None:
+                    joint.origin.xyz = translation
+                if rotation is not None:
+                    joint.origin.rpy = rotation
 
     def link_entity_path(self, link: urdf_parser.Link) -> str:
         """Return the entity path for the URDF link."""
@@ -40,20 +77,38 @@ class URDFVisualizer:
             return f"{self.entity_path_prefix}/{entity_path}"
         return entity_path
 
-    def visualize(self) -> None:
+    def visualize(self, observation_time: float = None) -> None:
         """Visualize a URDF file in Rerun."""
+        if observation_time is None:
+            observation_time = time.time()
+        else:
+            observation_time = observation_time
+        self.set_time_seconds(observation_time=observation_time)
+
+        # Log the root link with the current root pose
+        root_link = self.urdf.links[0]
+        root_entity_path = self.add_entity_path_prefix(self.urdf.get_root())
+        self.log_link(root_entity_path, root_link, self.root_pose)
+
         for joint in self.urdf.joints:
             entity_path = self.joint_entity_path(joint)
             self.log_joint(entity_path, joint)
 
-        for link in self.urdf.links:
+        for link in self.urdf.links[1:]:
             entity_path = self.link_entity_path(link)
             self.log_link(entity_path, link)
 
-    def log_link(self, entity_path: str, link: urdf_parser.Link) -> None:
+    def log_link(
+        self,
+        entity_path: str,
+        link: urdf_parser.Link,
+        transform: Optional[np.ndarray] = None,
+    ) -> None:
         """Log a URDF link to Rerun."""
+        if transform is None:
+            transform = np.eye(4)
         for i, visual in enumerate(link.visuals):
-            self.log_visual(entity_path + f"/visual_{i}", visual)
+            self.log_visual(entity_path + f"/visual_{i}", visual, transform)
 
     def log_joint(self, entity_path: str, joint: urdf_parser.Joint) -> None:
         """Log a URDF joint to Rerun."""
@@ -65,15 +120,20 @@ class URDFVisualizer:
         if joint.origin is not None and joint.origin.rpy is not None:
             rotation = st.Rotation.from_euler("xyz", joint.origin.rpy).as_matrix()
 
-        scale_matrix = np.eye(4)
-        scale_matrix[:3, :3] *= self.frame_scale
-
+        # Split the entity path to add "agent"
+        parts = entity_path.split("/")
+        if len(parts) > 1:
+            log_path = "/".join([parts[0], "agent"] + parts[1:])
+        else:
+            log_path = "/".join([parts[0], "agent"])
         rr.log(
-            entity_path,
+            log_path,
             rr.Transform3D(translation=translation, mat3x3=rotation),
         )
 
-    def log_visual(self, entity_path: str, visual: urdf_parser.Visual) -> None:
+    def log_visual(
+        self, entity_path: str, visual: urdf_parser.Visual, parent_transform: np.ndarray
+    ) -> None:
         """Log a URDF visual to Rerun."""
         material = None
         if visual.material is not None:
@@ -90,6 +150,7 @@ class URDFVisualizer:
                 "xyz", visual.origin.rpy
             ).as_matrix()
 
+        transform = parent_transform @ transform
         mesh_or_scene = self.load_mesh_or_geometry(visual, transform)
         self.log_mesh_or_scene(entity_path, mesh_or_scene, material)
 
@@ -188,8 +249,15 @@ class URDFVisualizer:
                 else:
                     vertex_colors = mesh.visual.to_color().vertex_colors
 
+        # Split the entity path to add "agent"
+        parts = entity_path.split("/")
+        if len(parts) > 1:
+            log_path = "/".join([parts[0], "agent"] + parts[1:])
+        else:
+            log_path = "/".join([parts[0], "agent"])
+
         rr.log(
-            entity_path,
+            log_path,
             rr.Mesh3D(
                 vertex_positions=mesh.vertices,
                 triangle_indices=mesh.faces,
@@ -250,3 +318,30 @@ class URDFVisualizer:
         if albedo_texture.ndim == 2:
             albedo_texture = np.stack([albedo_texture] * 3, axis=-1)
         return albedo_texture
+
+    def set_time_sequence(self, time_line: str, time_sequence: np.ndarray) -> None:
+        """Set the time sequence for the visualizer."""
+        rr.set_time_sequence(time_line, time_sequence)
+
+    def set_time_seconds(self, observation_time: float) -> None:
+        """Set the time in seconds for the visualizer."""
+        rr.set_time_seconds("real_clock", observation_time)
+
+
+# Example usage:
+if __name__ == "__main__":
+    visualizer = URDFVisualizer("path/to/urdf/file.urdf", "test_prefix")
+    visualizer.set_root_pose(np.array([0, 0, 0]), np.array([0, 0, 0]))
+    visualizer.visualize(observation_time=time.time())
+
+    # Update root pose and re-visualize
+    visualizer.set_root_pose(np.array([1, 1, 1]), np.array([0.5, 0.5, 0.5]))
+    visualizer.visualize(observation_time=time.time())
+
+    # Update a specific joint and re-visualize
+    visualizer.update_joint(
+        "joint_name",
+        translation=np.array([0.1, 0.2, 0.3]),
+        rotation=np.array([0.1, 0.2, 0.3]),
+    )
+    visualizer.visualize(observation_time=time.time())

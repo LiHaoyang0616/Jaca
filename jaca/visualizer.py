@@ -1,15 +1,15 @@
 import rerun as rr
 from .camera import Camera
-from .point_cloud import PointCloud
-from .robot_model import RobotModel
+from .point_cloud import PointCloudVisualizer
+from .robot_model import URDFVisualizer
 from .trajectory import Trajectory
 
 
 class Visualizer:
     def __init__(self):
         self.camera = Camera("camera")
-        self.point_cloud = PointCloud("point_cloud")
-        self.robot_model = RobotModel("robot")
+        self.point_cloud = PointCloudVisualizer("point_cloud")
+        self.robot_model = URDFVisualizer("robot")
         self.trajectory = Trajectory("trajectory")
 
     def visualize_camera(self, pose, rgb_image):
